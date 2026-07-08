@@ -236,7 +236,7 @@ export default function Settings({ onBack }) {
     }
 
     if ([ 'available', 'manual-update', 'error' ].includes(updateState.status) || (!appInfo?.canAutoInstall && updateState.latestVersion && updateState.latestVersion !== appInfo?.version)) {
-      const target = updateState.releaseUrl || appInfo?.releaseUrl || 'https://github.com/lmk1010/OpenExam/releases';
+      const target = updateState.releaseUrl || appInfo?.releaseUrl || 'https://github.com/biounm2/AdmitUp/releases';
       if (window.openexam?.app?.openReleasePage) {
         await window.openexam.app.openReleasePage();
       } else {
@@ -726,9 +726,9 @@ export default function Settings({ onBack }) {
                   </div>
                   <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>本地优先的备考刷题应用 · AI 助学</p>
                   <div style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
-                    <button type="button" onClick={() => handleOpenLink('https://github.com/lmk1010/OpenExam')} style={{ fontSize: 13, color: "var(--text)", fontWeight: 600, padding: "8px 14px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer" }}>GitHub 仓库</button>
-                    <button type="button" onClick={() => handleOpenLink('https://github.com/lmk1010/OpenExam/issues')} style={{ fontSize: 13, color: "var(--text)", fontWeight: 600, padding: "8px 14px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer" }}>反馈问题</button>
-                    <button type="button" onClick={() => handleOpenLink(appInfo?.releaseUrl || 'https://github.com/lmk1010/OpenExam/releases')} style={{ fontSize: 13, color: "var(--text)", fontWeight: 600, padding: "8px 14px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer" }}>Release 页面</button>
+                    <button type="button" onClick={() => handleOpenLink('https://github.com/biounm2/AdmitUp')} style={{ fontSize: 13, color: "var(--text)", fontWeight: 600, padding: "8px 14px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer" }}>GitHub 仓库</button>
+                    <button type="button" onClick={() => handleOpenLink('https://github.com/biounm2/AdmitUp/issues')} style={{ fontSize: 13, color: "var(--text)", fontWeight: 600, padding: "8px 14px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer" }}>反馈问题</button>
+                    <button type="button" onClick={() => handleOpenLink(appInfo?.releaseUrl || 'https://github.com/biounm2/AdmitUp/releases')} style={{ fontSize: 13, color: "var(--text)", fontWeight: 600, padding: "8px 14px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer" }}>Release 页面</button>
                   </div>
                 </div>
               </div>

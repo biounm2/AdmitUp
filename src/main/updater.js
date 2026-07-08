@@ -1,8 +1,8 @@
 const { app, BrowserWindow, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
-const RELEASES_URL = 'https://github.com/lmk1010/OpenExam/releases';
-const LATEST_RELEASE_API = 'https://api.github.com/repos/lmk1010/OpenExam/releases/latest';
+const RELEASES_URL = 'https://github.com/biounm2/AdmitUp/releases';
+const LATEST_RELEASE_API = 'https://api.github.com/repos/biounm2/AdmitUp/releases/latest';
 const AUTO_INSTALL_ENABLED = process.platform === 'win32';
 
 let initialized = false;
@@ -65,7 +65,7 @@ async function fetchLatestRelease() {
   const response = await fetch(LATEST_RELEASE_API, {
     headers: {
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'OpenExam-Updater',
+      'User-Agent': 'AdmitUp-Updater',
     },
   });
 
