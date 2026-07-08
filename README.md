@@ -68,12 +68,28 @@ AdmitUp 是一个基于 `Electron + React + SQLite` 的桌面端刷题与 AI 出
 
 ```bash
 npm install
+npm run resources:download
 npm run dev
+```
+
+`npm run dev`、`npm run start` 和桌面打包命令会自动检查资源是否存在。缺少资源时，会从当前版本的 GitHub Release 下载 `AdmitUp-resources-v1.0.0.zip` 并解压到 `data/`。
+
+如需指定其它资源包：
+
+```bash
+ADMITUP_RESOURCES_VERSION=1.0.0 npm run resources:download
+ADMITUP_RESOURCES_URL=https://example.com/AdmitUp-resources.zip npm run resources:download
 ```
 
 ## 常用命令
 
 ```bash
+# 下载或检查 Release 资源包
+npm run resources:download
+
+# 强制重新下载资源包
+npm run resources:download:force
+
 # 构建前端
 npm run build
 
@@ -90,27 +106,34 @@ npm run dist:win
 npm run dist:mac
 ```
 
-## 数据与隐私
+## 数据与资源
 
 - 用户数据默认保存在 Electron `userData` 目录下的本地 SQLite 数据库中。
-- 题库种子库从 `data/openexam.seed.db.gz` 初始化。
+- 题库种子库和题图资源不再进入 Git 历史，改为作为 GitHub Release 附件发布。
+- 默认资源附件命名为 `AdmitUp-resources-v<version>.zip`，内部路径必须包含 `data/openexam.seed.db.gz`、`data/question-assets-manifest.json` 和 `data/question-assets/`。
+- `release/`、`dist/`、`node_modules/`、题库种子库和题图资源均已加入 `.gitignore`。
 - AI API Key 保存在本地设置中，不会提交到仓库。
-- `release/`、`dist/`、`node_modules/` 等构建产物已加入 `.gitignore`。
 
 ## GitHub 发布
 
 仓库包含 GitHub Actions：
 
 - `Build`：在 push / PR 时执行前端构建。
-- `Release Desktop Apps`：推送 `v*` 标签后构建 Windows 与 macOS 安装包，并上传到 GitHub Release。
+- `Release Desktop Apps`：推送 `v*` 标签后下载 Release 资源包，构建 Windows 与 macOS 安装包，并上传到 GitHub Release。
 
-示例：
+发布新版本时：
 
 ```bash
-git tag v0.2.2
+# 1. 生成并上传资源包到对应 Release
+# 资源包名称示例：AdmitUp-resources-v1.0.0.zip
+
+# 2. 推送代码和标签
 git push origin main
-git push origin v0.2.2
+git tag v1.0.0
+git push origin v1.0.0
 ```
+
+如果新版本沿用旧资源，可以在构建环境设置 `ADMITUP_RESOURCES_VERSION` 指向已有资源版本。
 
 ## 项目来源与许可
 
