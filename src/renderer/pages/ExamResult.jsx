@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import RichQuestionContent from '../components/RichQuestionContent.jsx';
 import { getState } from '../store/examStore.js';
+import { getCategories, getCategoryName, getSubjectForTrack } from '../utils/examTaxonomy.js';
 
 const categoryNames = {
   yanyu: '言语理解',
@@ -9,8 +10,6 @@ const categoryNames = {
   ziliao: '资料分析',
   changshi: '常识判断'
 };
-
-const categoryOrder = ['yanyu', 'shuliang', 'panduan', 'ziliao', 'changshi'];
 
 const toMultipleKeys = (value) => {
   if (Array.isArray(value)) return [...new Set(value.map(v => String(v || '').trim()).filter(Boolean))].sort();
@@ -94,6 +93,9 @@ export default function ExamResult({ result, onBack }) {
     return acc;
   }, {});
   const currentQuestion = questions[currentIndex];
+  const resultTrack = result?.config?.examTrack || (
+    questions.some((q) => String(q.category || '').startsWith('kaoyan_')) ? 'kaoyan' : 'gongkao'
+  );
 
   const categoryStats = {};
   questions.forEach(q => {
@@ -111,7 +113,7 @@ export default function ExamResult({ result, onBack }) {
     const loadHistory = async () => {
       if (window.openexam?.db) {
         try {
-          const stats = await window.openexam.db.getPracticeStats();
+          const stats = await window.openexam.db.getPracticeStats({ subject: getSubjectForTrack(resultTrack) });
           setHistoryStats(stats);
         } catch (e) {
           console.error('加载历史数据失败:', e);
@@ -119,7 +121,7 @@ export default function ExamResult({ result, onBack }) {
       }
     };
     loadHistory();
-  }, []);
+  }, [resultTrack]);
 
   const formatDuration = (seconds) => {
     if (!seconds || isNaN(seconds)) return '0分0秒';
@@ -148,18 +150,18 @@ export default function ExamResult({ result, onBack }) {
   const wrongCount = result?.wrongCount ?? Math.max(answeredCount - correctCount, 0);
 
   const level = getScoreLevel(accuracy);
-  const resultTitle = result?.paperTitle || result?.config?.title || (result?.config?.category ? categoryNames[result.config.category] || '专项练习' : '练习完成');
+  const resultTitle = result?.paperTitle || result?.config?.title || (result?.config?.category ? getCategoryName(result.config.category, resultTrack) || '专项练习' : '练习完成');
   const resultSubtitle = `${correctCount} 正确 · ${wrongCount} 错误 · ${formatDuration(timeElapsed)}`;
   const historyAccuracy = historyStats?.accuracy || 0;
   const historyDelta = accuracy - historyAccuracy;
   const historyReady = Boolean(historyStats?.totalDone);
 
-  const categoryRows = categoryOrder.map(cat => {
+  const categoryRows = getCategories(resultTrack).map(({ key: cat, name }) => {
     const stat = categoryStats[cat] || { total: 0, correct: 0 };
     const pct = stat.total > 0 ? Math.round((stat.correct / stat.total) * 100) : 0;
     return {
       key: cat,
-      name: categoryNames[cat],
+      name,
       total: stat.total,
       correct: stat.correct,
       pct

@@ -2,32 +2,35 @@ import React, { useEffect, useRef, useState } from "react";
 import { getAISettings, isAIConfigured } from "../store/aiSettings.js";
 import { buildPaperShareText, copyText } from "../utils/paperShare.js";
 import { useDialog } from "../components/DialogProvider.jsx";
-
-const CATEGORIES = [
-  { key: "yanyu", name: "言语理解" }, { key: "shuliang", name: "数量关系" },
-  { key: "panduan", name: "判断推理" }, { key: "ziliao", name: "资料分析" },
-  { key: "changshi", name: "常识判断" },
-];
-const DEFAULT_MIXED_CATEGORIES = CATEGORIES.map((item) => item.key);
-const EXAM_TRACKS = [
-  { key: "gongkao", name: "考公" },
-  { key: "shiye", name: "事业单位" },
-  { key: "kaoyan", name: "考研" },
-  { key: "self", name: "自定义备考" },
-];
-const TRACK_SUBJECTS = {
-  gongkao: "xingce",
-  shiye: "shiye",
-  kaoyan: "kaoyan",
-  self: "custom",
+import { EXAM_TRACKS as SHARED_EXAM_TRACKS, getCategories, getDefaultCategory, getSubjectForTrack } from "../utils/examTaxonomy.js";
+const EXAM_TRACKS = SHARED_EXAM_TRACKS.map((track) => ({
+  key: track.key,
+  name: track.key === "self" ? "自定义备考" : track.label,
+}));
+const getCategoryOptions = (track = "gongkao") => getCategories(track).map((category) => ({
+  key: category.key,
+  name: category.name,
+}));
+const getDefaultMixedCategories = (track = "gongkao") => getCategoryOptions(track).map((item) => item.key);
+const FOCUS_PRESETS_BY_TRACK = {
+  gongkao: [
+    { key: "standard", name: "通用组卷" },
+    { key: "idiom", name: "成语练习" },
+    { key: "current_affairs", name: "时政热点" },
+    { key: "computer", name: "计算机基础" },
+    { key: "custom", name: "自定义方向" },
+  ],
+  kaoyan: [
+    { key: "standard", name: "考研综合" },
+    { key: "math_foundation", name: "高数基础" },
+    { key: "math_hard", name: "高数强化" },
+    { key: "kaoyan_408", name: "408 专业课" },
+    { key: "english_reading", name: "英语阅读" },
+    { key: "politics_choice", name: "政治选择" },
+    { key: "custom", name: "自定义方向" },
+  ],
 };
-const FOCUS_PRESETS = [
-  { key: "standard", name: "通用组卷" },
-  { key: "idiom", name: "成语练习" },
-  { key: "current_affairs", name: "时政热点" },
-  { key: "computer", name: "计算机基础" },
-  { key: "custom", name: "自定义方向" },
-];
+const getFocusPresets = (track = "gongkao") => FOCUS_PRESETS_BY_TRACK[track] || FOCUS_PRESETS_BY_TRACK.gongkao;
 const ANALYSIS_MODES = [
   { key: "brief", name: "简明解析" },
   { key: "thinking", name: "解题思路" },
@@ -84,27 +87,43 @@ function getTrackLabel(track, customTrackName = "") {
   return EXAM_TRACKS.find((item) => item.key === track)?.name || track || "未分类";
 }
 
-function getFocusLabel(focus, customFocusName = "") {
+function getFocusLabel(focus, customFocusName = "", track = "gongkao") {
   if (focus === "custom") return String(customFocusName || "自定义方向").trim() || "自定义方向";
-  return FOCUS_PRESETS.find((item) => item.key === focus)?.name || focus || "通用组卷";
+  return getFocusPresets(track).find((item) => item.key === focus)?.name || focus || "通用组卷";
 }
 
 function getPaperSubject(config = {}) {
   if (config.track === "self") {
     const customSubject = String(config.customTrackName || "").trim();
-    return customSubject || TRACK_SUBJECTS.self;
+    return customSubject || getSubjectForTrack("self");
   }
-  return TRACK_SUBJECTS[config.track] || "xingce";
+  return getSubjectForTrack(config.track);
 }
 
 function getGeneratedTitle(config = {}) {
   const trackLabel = getTrackLabel(config.track, config.customTrackName);
-  const focusLabel = getFocusLabel(config.focus, config.customFocusName);
+  const focusLabel = getFocusLabel(config.focus, config.customFocusName, config.track);
+  const categoryOptions = getCategoryOptions(config.track);
   const modeLabel = config.mode === "mixed"
     ? "综合组卷"
-    : (CATEGORIES.find((item) => item.key === config.category)?.name || "专项");
+    : (categoryOptions.find((item) => item.key === config.category)?.name || "专项");
   const difficultyLabel = DIFFICULTIES.find((item) => item.value === config.difficulty)?.label || "中等";
   return `${trackLabel} · ${focusLabel} · ${modeLabel} · ${difficultyLabel}`;
+}
+
+function getPresetCategory(track, focus, currentCategory) {
+  const validKeys = getCategoryOptions(track).map((item) => item.key);
+  const presets = track === "kaoyan"
+    ? {
+        math_foundation: "kaoyan_math",
+        math_hard: "kaoyan_math",
+        kaoyan_408: "kaoyan_408_data_structure",
+        english_reading: "kaoyan_english",
+        politics_choice: "kaoyan_politics",
+      }
+    : { idiom: "yanyu", computer: "changshi" };
+  const next = presets[focus] || currentCategory;
+  return validKeys.includes(next) ? next : (validKeys[0] || currentCategory);
 }
 
 export default function AIGenerate({ onOpenPaper, globalTrack = "" }) {
@@ -114,8 +133,8 @@ export default function AIGenerate({ onOpenPaper, globalTrack = "" }) {
     focus: "standard",
     customFocusName: "",
     mode: "single",
-    category: "yanyu",
-    mixedCategories: [...DEFAULT_MIXED_CATEGORIES],
+    category: getDefaultCategory("gongkao"),
+    mixedCategories: getDefaultMixedCategories("gongkao"),
     analysisMode: "brief",
     includeCurrentAffairs: false,
     currentAffairsDays: 30,
@@ -189,6 +208,27 @@ export default function AIGenerate({ onOpenPaper, globalTrack = "" }) {
     setConfig((prev) => (prev.track === globalTrack ? prev : { ...prev, track: globalTrack }));
   }, [globalTrack]);
 
+  useEffect(() => {
+    const options = getCategoryOptions(config.track);
+    const validKeys = options.map((item) => item.key);
+    const validFocusKeys = getFocusPresets(config.track).map((item) => item.key);
+    setConfig((prev) => {
+      const nextFocus = validFocusKeys.includes(prev.focus) ? prev.focus : "standard";
+      const nextCategory = validKeys.includes(prev.category)
+        ? getPresetCategory(config.track, nextFocus, prev.category)
+        : getPresetCategory(config.track, nextFocus, getDefaultCategory(config.track));
+      const mixed = Array.isArray(prev.mixedCategories)
+        ? prev.mixedCategories.filter((item) => validKeys.includes(item))
+        : [];
+      return {
+        ...prev,
+        focus: nextFocus,
+        category: nextCategory,
+        mixedCategories: mixed.length ? mixed : getDefaultMixedCategories(config.track),
+      };
+    });
+  }, [config.track]);
+
   const handleGenerate = async () => {
     const token = generationTokenRef.current + 1;
     generationTokenRef.current = token;
@@ -240,9 +280,10 @@ export default function AIGenerate({ onOpenPaper, globalTrack = "" }) {
 
     try {
       const settings = getAISettings();
+      const activeCategories = getCategoryOptions(config.track);
       const categoryText = config.mode === "mixed"
-        ? config.mixedCategories.map((key) => CATEGORIES.find((c) => c.key === key)?.name || key).join("、")
-        : (CATEGORIES.find((c) => c.key === config.category)?.name || config.category);
+        ? config.mixedCategories.map((key) => activeCategories.find((c) => c.key === key)?.name || key).join("、")
+        : (activeCategories.find((c) => c.key === config.category)?.name || config.category);
       pushFeedback("info", `参数已提交：${getTrackLabel(config.track, config.customTrackName)} / ${config.count}题 / ${categoryText}`);
       const result = await window.openexam.ai.generatePaper(settings, config);
       if (generationTokenRef.current !== token) return;
@@ -377,7 +418,7 @@ export default function AIGenerate({ onOpenPaper, globalTrack = "" }) {
     setHistoryLoading(true);
     setHistoryError("");
     try {
-      const rows = await window.openexam.db.getSavedAIPapers();
+      const rows = await window.openexam.db.getSavedAIPapers({ subject: getPaperSubject(config) });
       const list = Array.isArray(rows) ? rows : [];
       setHistoryPapers(list);
       if (!list.length) {
@@ -399,6 +440,11 @@ export default function AIGenerate({ onOpenPaper, globalTrack = "" }) {
       await loadHistoryPapers();
     }
   };
+
+  useEffect(() => {
+    if (!showHistory) return;
+    loadHistoryPapers();
+  }, [config.track]);
 
   const handleStartHistoryPaper = async (paper) => {
     if (!paper?.id || !onOpenPaper) return;
@@ -484,6 +530,7 @@ export default function AIGenerate({ onOpenPaper, globalTrack = "" }) {
 
   const elapsedSec = Math.max(0, Math.floor(elapsedMs / 1000));
   const elapsedText = `${Math.floor(elapsedSec / 60)}分${String(elapsedSec % 60).padStart(2, "0")}秒`;
+  const currentCategoryOptions = getCategoryOptions(config.track);
 
   return (
     <section className="main-panel module-page" style={{ padding: "0 20px", gap: 20, overflow: "auto" }}>
@@ -549,12 +596,12 @@ export default function AIGenerate({ onOpenPaper, globalTrack = "" }) {
             <div>
               <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: "var(--text)", marginBottom: 8 }}>训练方向</label>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {FOCUS_PRESETS.map((item) => (
+                {getFocusPresets(config.track).map((item) => (
                   <button
                     key={item.key}
                     onClick={() => {
                       setConfig((prev) => {
-                        const nextCategory = item.key === "idiom" ? "yanyu" : (item.key === "computer" ? "changshi" : prev.category);
+                        const nextCategory = getPresetCategory(prev.track, item.key, prev.category);
                         return { ...prev, focus: item.key, category: nextCategory };
                       });
                     }}
@@ -610,7 +657,7 @@ export default function AIGenerate({ onOpenPaper, globalTrack = "" }) {
                 {config.mode === "mixed" ? "综合题型覆盖" : "题目分类"}
               </label>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {CATEGORIES.map((item) => {
+                {currentCategoryOptions.map((item) => {
                   const active = config.mode === "mixed"
                     ? config.mixedCategories.includes(item.key)
                     : config.category === item.key;

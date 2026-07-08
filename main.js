@@ -1,4 +1,4 @@
-const { app, BrowserWindow, nativeTheme, ipcMain, nativeImage, protocol } = require("electron");
+const { app, BrowserWindow, Menu, nativeTheme, ipcMain, nativeImage, protocol } = require("electron");
 const path = require("path");
 const database = require("./src/main/database.js");
 const paperExport = require("./src/main/paperExport.js");
@@ -29,8 +29,9 @@ const createWindow = () => {
     backgroundColor: "#ffffff",
     show: false,
     icon: APP_ICON_PATH,
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 12, y: 22 },
+    title: "AdmitUp",
+    frame: false,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -38,6 +39,8 @@ const createWindow = () => {
     }
   });
 
+  win.setMenuBarVisibility(false);
+  win.removeMenu();
   win.once("ready-to-show", () => win.show());
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -72,9 +75,11 @@ const createWindow = () => {
 
 app.whenReady().then(() => {
   nativeTheme.themeSource = "light";
+  Menu.setApplicationMenu(null);
 
   if (!APP_ICON.isEmpty()) {
-    app.setName("OpenExam");
+    app.setName("AdmitUp");
+    app.setPath("userData", path.join(app.getPath("appData"), "openexam"));
     if (process.platform === "darwin" && app.dock?.setIcon) {
       app.dock.setIcon(APP_ICON);
     }
@@ -109,8 +114,8 @@ ipcMain.handle("db:savePracticeRecord", (event, record) => {
   return true;
 });
 
-ipcMain.handle("db:getPracticeRecords", () => {
-  return database.getPracticeRecords();
+ipcMain.handle("db:getPracticeRecords", (event, options) => {
+  return database.getPracticeRecords(options || {});
 });
 
 ipcMain.handle("db:addWrongQuestion", (event, { questionId, paperId, userAnswer, correctAnswer }) => {
@@ -126,16 +131,19 @@ ipcMain.handle("db:reviewWrongQuestion", (event, input) => {
   return database.reviewWrongQuestion(input?.questionId, input?.outcome);
 });
 
-ipcMain.handle("db:getCategoryStats", () => {
-  return database.getCategoryStats();
+ipcMain.handle("db:getCategoryStats", (event, options) => {
+  return database.getCategoryStats(options || {});
 });
 
-ipcMain.handle("db:getSubCategoryStats", (event, category) => {
-  return database.getSubCategoryStats(category);
+ipcMain.handle("db:getSubCategoryStats", (event, input) => {
+  if (input && typeof input === "object") {
+    return database.getSubCategoryStats(input.category, input.options || {});
+  }
+  return database.getSubCategoryStats(input);
 });
 
-ipcMain.handle("db:getPracticeStats", () => {
-  return database.getPracticeStats();
+ipcMain.handle("db:getPracticeStats", (event, options) => {
+  return database.getPracticeStats(options || {});
 });
 
 ipcMain.handle("db:importPaper", (event, { paperData, questions }) => {
@@ -150,8 +158,8 @@ ipcMain.handle("db:getImportedPapers", () => {
   return database.getImportedPapers();
 });
 
-ipcMain.handle("db:getSavedAIPapers", () => {
-  return database.getSavedAIPapers();
+ipcMain.handle("db:getSavedAIPapers", (event, options) => {
+  return database.getSavedAIPapers(options || {});
 });
 
 ipcMain.handle("db:renameSavedPaper", (event, { paperId, title }) => {
@@ -166,24 +174,30 @@ ipcMain.handle("db:getQuestionsByCategory", (event, { category, subCategory, lim
   return database.getQuestionsByCategory(category, subCategory, limit, shuffle);
 });
 
-ipcMain.handle("db:getDailyStats", (event, days) => {
-  return database.getDailyStats(days || 7);
+ipcMain.handle("db:getDailyStats", (event, input) => {
+  if (input && typeof input === "object") {
+    return database.getDailyStats(input.days || 7, input.options || {});
+  }
+  return database.getDailyStats(input || 7);
 });
 
-ipcMain.handle("db:getStreakDays", () => {
-  return database.getStreakDays();
+ipcMain.handle("db:getStreakDays", (event, options) => {
+  return database.getStreakDays(options || {});
 });
 
-ipcMain.handle("db:getTodayStats", () => {
-  return database.getTodayStats();
+ipcMain.handle("db:getTodayStats", (event, options) => {
+  return database.getTodayStats(options || {});
 });
 
-ipcMain.handle("db:getHeatmapData", (event, days) => {
-  return database.getHeatmapData(days || 90);
+ipcMain.handle("db:getHeatmapData", (event, input) => {
+  if (input && typeof input === "object") {
+    return database.getHeatmapData(input.days || 90, input.options || {});
+  }
+  return database.getHeatmapData(input || 90);
 });
 
-ipcMain.handle("db:getGrowthData", () => {
-  return database.getGrowthData();
+ipcMain.handle("db:getGrowthData", (event, options) => {
+  return database.getGrowthData(options || {});
 });
 
 ipcMain.handle("db:getAppSetting", (event, key) => {
@@ -244,7 +258,7 @@ ipcMain.handle("db:exportBackupFile", async (event, clientState) => {
     ...snapshot,
     kind: "openexam-backup",
     version: 2,
-    app: { name: "OpenExam", version: app.getVersion() },
+    app: { name: "AdmitUp", version: app.getVersion() },
     client_state: clientState && typeof clientState === "object" ? clientState : {},
   };
   const result = await dataBackup.saveBackupFile(BrowserWindow.fromWebContents(event.sender), payload);

@@ -3,6 +3,7 @@ import { ACH_GROUP_LABELS, ICONS, Ico, getAchievementGroupLabel } from '../compo
 import AchievementTile, { AchievementRing } from '../components/AchievementTile.jsx';
 import AchievementDialog from '../components/AchievementDialog.jsx';
 import { normalizeAchievements } from '../utils/achievementUtils.js';
+import { getSubjectForTrack } from '../utils/examTaxonomy.js';
 
 const FILTERS = [
   { key: 'all', label: '全部' },
@@ -30,7 +31,7 @@ const compactText = {
   color: 'var(--muted)',
 };
 
-export default function AchievementCenter({ onBack }) {
+export default function AchievementCenter({ onBack, examTrack = 'gongkao' }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -43,13 +44,13 @@ export default function AchievementCenter({ onBack }) {
         return;
       }
       try {
-        setData(await window.openexam.db.getGrowthData());
+        setData(await window.openexam.db.getGrowthData({ subject: getSubjectForTrack(examTrack) }));
       } catch (error) {
         console.error('加载成就数据失败:', error);
       }
       setLoading(false);
     })();
-  }, []);
+  }, [examTrack]);
 
   const achievements = normalizeAchievements(data?.achievements, data || {});
   const unlockedCount = achievements.filter((item) => item.unlocked).length;

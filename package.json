@@ -1,5 +1,5 @@
 {
-  "name": "openexam",
+  "name": "admitup",
   "version": "0.2.2",
   "private": true,
   "main": "main.js",
@@ -36,8 +36,8 @@
     "xlsx": "^0.18.5"
   },
   "build": {
-    "appId": "com.openexam.app",
-    "productName": "OpenExam",
+    "appId": "com.admitup.desktop",
+    "productName": "AdmitUp",
     "asar": true,
     "asarUnpack": [
       "**/*.node"
@@ -76,14 +76,6 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "lmk1010",
-        "repo": "OpenExam",
-        "releaseType": "release"
-      }
-    ],
     "electronUpdaterCompatibility": ">=2.16",
     "extraResources": [
       {
@@ -104,7 +96,7 @@
       "en-US"
     ]
   },
-  "description": "OpenExam desktop AI learning platform",
-  "author": "lmk1010",
+  "description": "AdmitUp desktop AI learning platform",
+  "author": "",
   "license": "GPL-3.0-or-later"
 }

@@ -1,60 +1,5 @@
 import React, { useState, useEffect } from 'react';
-
-// 分类配置
-const categoryConfig = {
-  yanyu: { name: '言语理解', color: 'var(--category-yanyu)' },
-  shuliang: { name: '数量关系', color: 'var(--category-shuliang)' },
-  panduan: { name: '判断推理', color: 'var(--category-panduan)' },
-  ziliao: { name: '资料分析', color: 'var(--category-ziliao)' },
-  changshi: { name: '常识判断', color: 'var(--category-changshi)' },
-};
-
-// 默认子分类配置
-const defaultSubCategories = {
-  yanyu: ['xuanci', 'yueduan', 'yuju', 'wenzhang'],
-  shuliang: ['jisuan', 'tuili'],
-  panduan: ['tuxing', 'dingyi', 'leibi', 'luoji'],
-  ziliao: ['wenzi', 'biaoge', 'tubiao', 'zonghe', 'zengzhang'],
-  changshi: ['zhengzhi', 'jingji', 'falv', 'keji', 'renwen', 'dili'],
-};
-
-const TRACK_LABELS = {
-  gongkao: '考公',
-  shiye: '事业单位',
-  kaoyan: '考研',
-  self: '自定义',
-};
-
-// 子分类中文映射
-const subCategoryNames = {
-  // 言语理解
-  xuanci: '选词填空',
-  yueduan: '片段阅读',
-  yuju: '语句表达',
-  wenzhang: '文章阅读',
-  // 数量关系
-  jisuan: '数学运算',
-  tuili: '数字推理',
-  // 判断推理
-  tuxing: '图形推理',
-  dingyi: '定义判断',
-  leibi: '类比推理',
-  luoji: '逻辑判断',
-  // 资料分析
-  wenzi: '文字资料',
-  biaoge: '表格资料',
-  tubiao: '图形资料',
-  zonghe: '综合资料',
-  zengzhang: '增长率',
-  // 常识判断
-  zhengzhi: '政治',
-  jingji: '经济',
-  falv: '法律',
-  keji: '科技',
-  renwen: '人文',
-  dili: '地理',
-  gongcheng: '工程问题',
-};
+import { getCategories, getSubCategoryName, getSubjectForTrack } from '../utils/examTaxonomy.js';
 
 // 简约图标组件
 const Icons = {
@@ -98,7 +43,16 @@ const Icons = {
 // 检查是否在 Electron 环境
 const isElectron = () => window.openexam?.db;
 
-export default function PracticeModule({ onStartPractice, onImport, onHistory, examTrack = 'gongkao', onGoAIGenerate }) {
+export default function PracticeModule({ onStartPractice, onImport, onHistory, examTrack = 'gongkao' }) {
+  const categories = getCategories(examTrack);
+  const categoryConfig = Object.fromEntries(categories.map((category) => [
+    category.key,
+    { name: category.name, color: category.color },
+  ]));
+  const defaultSubCategories = Object.fromEntries(categories.map((category) => [
+    category.key,
+    category.subCategories.map((subCategory) => subCategory.key),
+  ]));
   const [expandedId, setExpandedId] = useState(null);
   const [modules, setModules] = useState([]);
   const [stats, setStats] = useState({ totalQuestions: 0, totalDone: 0, accuracy: 0, wrongCount: 0 });
@@ -116,11 +70,6 @@ export default function PracticeModule({ onStartPractice, onImport, onHistory, e
   // 加载数据
   useEffect(() => {
     const loadData = async () => {
-      if (examTrack !== 'gongkao') {
-        setModules([]);
-        setLoading(false);
-        return;
-      }
       if (!isElectron()) {
         // 非 Electron 环境，显示所有默认分类
         const defaultModules = Object.entries(categoryConfig).map(([id, cfg]) => ({
@@ -137,8 +86,9 @@ export default function PracticeModule({ onStartPractice, onImport, onHistory, e
 
       try {
         // 获取分类统计
-        const categoryStats = await window.openexam.db.getCategoryStats();
-        const practiceStats = await window.openexam.db.getPracticeStats();
+        const subject = getSubjectForTrack(examTrack);
+        const categoryStats = await window.openexam.db.getCategoryStats({ subject });
+        const practiceStats = await window.openexam.db.getPracticeStats({ subject });
 
         // 合并默认分类和数据库统计，确保所有分类都显示
         const moduleData = Object.entries(categoryConfig).map(([id, cfg]) => {
@@ -178,7 +128,7 @@ export default function PracticeModule({ onStartPractice, onImport, onHistory, e
     }
 
     try {
-      const dbSubs = await window.openexam.db.getSubCategoryStats(category);
+      const dbSubs = await window.openexam.db.getSubCategoryStats(category, { subject: getSubjectForTrack(examTrack) });
 
       // 合并默认子分类和数据库统计
       const mergedSubs = defaultSubs.map(sub => {
@@ -201,7 +151,7 @@ export default function PracticeModule({ onStartPractice, onImport, onHistory, e
 
   // 开始练习（直接开始）
   const handleStartPractice = (category, subCategory) => {
-    onStartPractice?.(category, subCategory, practiceConfig);
+    onStartPractice?.(category, subCategory, { ...practiceConfig, examTrack });
   };
 
   // 打开配置弹窗
@@ -225,20 +175,6 @@ export default function PracticeModule({ onStartPractice, onImport, onHistory, e
 
   if (loading) {
     return <div className="practice-page"><div className="loading-state">加载中...</div></div>;
-  }
-
-  if (examTrack !== 'gongkao') {
-    return (
-      <div className="practice-page">
-        <div className="empty-state" style={{ gap: 10 }}>
-          <p>当前类目（{TRACK_LABELS[examTrack] || examTrack}）暂无内置专项题库</p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button className="summary-btn outline" onClick={() => onImport?.()}>导入试卷</button>
-            <button className="summary-btn" onClick={() => onGoAIGenerate?.()}>去 AI 出卷</button>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   const totalCount = modules.reduce((sum, m) => sum + m.count, 0);
@@ -338,7 +274,7 @@ export default function PracticeModule({ onStartPractice, onImport, onHistory, e
                   <div className="practice-subs">
                     {subs.map(sub => (
                       <button key={sub.subCategory} className="sub-item" onClick={() => handleStartPractice(mod.id, sub.subCategory)} disabled={sub.count === 0}>
-                        <span className="sub-name">{subCategoryNames[sub.subCategory] || sub.subCategory || '未分类'}</span>
+                        <span className="sub-name">{getSubCategoryName(sub.subCategory, examTrack) || sub.subCategory || '未分类'}</span>
                         <span className="sub-count">{sub.count} 题</span>
                         <Icons.arrow />
                       </button>

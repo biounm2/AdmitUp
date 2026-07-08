@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import RichQuestionContent from '../components/RichQuestionContent.jsx';
 import { useDialog } from '../components/DialogProvider.jsx';
 import { getState } from '../store/examStore.js';
+import { getCategoryName } from '../utils/examTaxonomy.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CAT_NAMES = {
@@ -101,7 +102,7 @@ export default function ExamRoom({ paperId, questions: propQuestions, config, re
     setShowAnalysis(false);
     if (propQuestions?.length > 0) {
       setQuestions(propQuestions);
-      setPaper({ title: config?.title || `${CAT_NAMES[config?.category] || '专项'}练习`, type: 'practice' });
+      setPaper({ title: config?.title || `${getCategoryName(config?.category, config?.examTrack || 'gongkao') || '专项'}练习`, type: 'practice' });
     } else if (paperId) {
       const state = getState();
       setQuestions(state.currentQuestions || []);
@@ -283,7 +284,7 @@ export default function ExamRoom({ paperId, questions: propQuestions, config, re
   // ── Per-category stats ──
   const catStats = Object.entries(grouped).map(([cat, qs]) => ({
     cat,
-    name: CAT_NAMES[cat] || cat,
+    name: getCategoryName(cat, config?.examTrack || (String(cat).startsWith('kaoyan_') ? 'kaoyan' : 'gongkao')) || CAT_NAMES[cat] || cat,
     total: qs.length,
     done: qs.filter(q => isAnswered(answers[q.id], q.type)).length,
     palette: CAT_COLORS[cat] || CAT_COLORS.default,
@@ -448,7 +449,7 @@ export default function ExamRoom({ paperId, questions: propQuestions, config, re
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {Object.entries(grouped).map(([cat, qs]) => {
                 const pal = CAT_COLORS[cat] || CAT_COLORS.default;
-                const name = CAT_NAMES[cat] || cat;
+                const name = getCategoryName(cat, config?.examTrack || (String(cat).startsWith('kaoyan_') ? 'kaoyan' : 'gongkao')) || CAT_NAMES[cat] || cat;
                 const doneCnt = qs.filter(q => isAnswered(answers[q.id], q.type)).length;
                 return (
                   <div key={cat}>
@@ -531,7 +532,7 @@ export default function ExamRoom({ paperId, questions: propQuestions, config, re
                 </div>
                 <div style={{ width: 1, height: 14, background: catPalette.border }} />
                 <span style={{ fontSize: 11, fontWeight: 600, color: catPalette.color, padding: '2px 8px', borderRadius: 5, background: catPalette.soft }}>
-                  {currentQuestion.category ? (CAT_NAMES[currentQuestion.category] || currentQuestion.category) : '综合'}
+                  {currentQuestion.category ? (getCategoryName(currentQuestion.category, config?.examTrack || (String(currentQuestion.category).startsWith('kaoyan_') ? 'kaoyan' : 'gongkao')) || CAT_NAMES[currentQuestion.category] || currentQuestion.category) : '综合'}
                 </span>
                 <span style={{ fontSize: 10, color: 'var(--muted)', padding: '2px 7px', borderRadius: 5, background: 'var(--neutral-soft-bg)' }}>
                   {currentQuestion.type === 'single' ? '单选题' : '多选题'}

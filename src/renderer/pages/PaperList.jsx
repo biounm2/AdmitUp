@@ -3,6 +3,7 @@ import { actions } from '../store/examStore.js';
 import CustomSelect from '../components/CustomSelect.jsx';
 import { buildPaperShareText, copyText } from '../utils/paperShare.js';
 import { useDialog } from '../components/DialogProvider.jsx';
+import { getSubjectForTrack } from '../utils/examTaxonomy.js';
 
 // 省份标签数据
 const PROVINCES = [
@@ -134,9 +135,10 @@ export default function PaperList({ onOpenPaper, initialKeyword = '', focusToken
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
+      const subject = getSubjectForTrack(examTrack);
       const [paperData, recordData] = await Promise.all([
         actions.loadPapers(),
-        window.openexam?.db?.getPracticeRecords ? window.openexam.db.getPracticeRecords() : Promise.resolve([]),
+        window.openexam?.db?.getPracticeRecords ? window.openexam.db.getPracticeRecords({ subject }) : Promise.resolve([]),
       ]);
       setPapers(paperData);
       const nextResumable = {};
@@ -150,7 +152,7 @@ export default function PaperList({ onOpenPaper, initialKeyword = '', focusToken
       setLoading(false);
     };
     loadData();
-  }, []);
+  }, [examTrack]);
 
   useEffect(() => {
     setKeyword(initialKeyword || '');

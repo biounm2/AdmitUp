@@ -717,14 +717,14 @@ export default function Settings({ onBack }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 20, flex: 1, minHeight: 300, justifyContent: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "22px 24px", borderRadius: 20, background: "linear-gradient(180deg, var(--surface-elevated), var(--surface))", border: "1px solid var(--line)", boxShadow: "var(--elevated-shadow)" }}>
                 <div className="app-logo app-logo--about">
-                  <img src={appLogo} alt="OpenExam" className="app-logo-image" />
+                  <img src={appLogo} alt="AdmitUp" className="app-logo-image" />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <h3 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: "var(--text)", letterSpacing: "-0.5px" }}>OpenExam</h3>
+                    <h3 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: "var(--text)", letterSpacing: "-0.5px" }}>AdmitUp</h3>
                     <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700, background: "var(--accent-soft-bg)", padding: "4px 10px", borderRadius: 999 }}>v{appInfo?.version || '0.2.0'}</span>
                   </div>
-                  <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>开源公考刷题应用 · 本地优先 · AI 助学</p>
+                  <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>本地优先的备考刷题应用 · AI 助学</p>
                   <div style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
                     <button type="button" onClick={() => handleOpenLink('https://github.com/lmk1010/OpenExam')} style={{ fontSize: 13, color: "var(--text)", fontWeight: 600, padding: "8px 14px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer" }}>GitHub 仓库</button>
                     <button type="button" onClick={() => handleOpenLink('https://github.com/lmk1010/OpenExam/issues')} style={{ fontSize: 13, color: "var(--text)", fontWeight: 600, padding: "8px 14px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer" }}>反馈问题</button>

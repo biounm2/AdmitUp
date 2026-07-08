@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import RichQuestionContent from "../components/RichQuestionContent.jsx";
+import { getCategoryName, getSubjectForTrack } from "../utils/examTaxonomy.js";
 
 const CN = { yanyu: "言语理解", shuliang: "数量关系", panduan: "判断推理", ziliao: "资料分析", changshi: "常识判断" };
 const FILTERS = [{ key: "due", label: "待复习" }, { key: "all", label: "全部" }, { key: "learning", label: "熟悉中" }, { key: "mastered", label: "已掌握" }];
@@ -36,23 +37,23 @@ const normalizeOptions = (options) => Array.isArray(options) ? options.map((opt)
   content: String(opt?.content || ""),
 })).filter((opt) => opt.key) : [];
 
-export default function WrongBook({ onRedo }) {
+export default function WrongBook({ onRedo, examTrack = "gongkao" }) {
   const [list, setList] = useState([]), [loading, setLoading] = useState(true), [filter, setFilter] = useState("due"), [expandedId, setExpandedId] = useState(null), [busyId, setBusyId] = useState(""), [error, setError] = useState("");
-  const loadList = async () => {
+  const loadList = useCallback(async () => {
     if (!window.openexam?.db?.getWrongQuestions) return setLoading(false);
     setLoading(true); setError("");
-    try { const rows = await window.openexam.db.getWrongQuestions(); setList((rows || []).sort(sortByUrgency)); }
+    try { const rows = await window.openexam.db.getWrongQuestions({ subject: getSubjectForTrack(examTrack) }); setList((rows || []).sort(sortByUrgency)); }
     catch (e) { setError(e.message || "错题读取失败"); }
     setLoading(false);
-  };
-  useEffect(() => { loadList(); }, []);
+  }, [examTrack]);
+  useEffect(() => { loadList(); }, [loadList]);
 
   const stats = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10); const catCount = {};
     list.forEach((item) => { catCount[item.category] = (catCount[item.category] || 0) + 1; });
     const weakest = Object.entries(catCount).sort((a, b) => b[1] - a[1])[0];
-    return { due: list.filter((item) => item.is_due).length, today: list.filter((item) => String(item.added_at || "").startsWith(today)).length, mastered: list.filter((item) => (item.review_stage || 0) >= STAGES.length - 1 && !item.is_due).length, weakest: weakest ? CN[weakest[0]] || weakest[0] : "暂无" };
-  }, [list]);
+    return { due: list.filter((item) => item.is_due).length, today: list.filter((item) => String(item.added_at || "").startsWith(today)).length, mastered: list.filter((item) => (item.review_stage || 0) >= STAGES.length - 1 && !item.is_due).length, weakest: weakest ? getCategoryName(weakest[0], examTrack) || CN[weakest[0]] || weakest[0] : "暂无" };
+  }, [list, examTrack]);
 
   const filtered = useMemo(() => list.filter((item) => filter === "all" || (filter === "due" && item.is_due) || (filter === "learning" && !item.is_due && (item.review_stage || 0) < STAGES.length - 1) || (filter === "mastered" && !item.is_due && (item.review_stage || 0) >= STAGES.length - 1)).sort(sortByUrgency), [list, filter]);
   const focusDue = () => { setFilter("due"); const first = list.find((item) => item.is_due); if (first) setExpandedId(first.id); };
@@ -129,7 +130,7 @@ export default function WrongBook({ onRedo }) {
       return <article key={item.id} style={{ borderRadius: 20, border: item.is_due ? "1px solid var(--accent-border-soft)" : "1px solid var(--line)", background: item.is_due ? "linear-gradient(180deg, var(--accent-soft-bg), var(--surface))" : "var(--surface)", boxShadow: item.is_due ? "0 14px 30px rgba(15, 23, 42, 0.06)" : "none", overflow: "hidden" }}>
         <button onClick={() => setExpandedId(open ? null : item.id)} style={{ width: "100%", padding: 0, border: "none", background: "transparent", textAlign: "left", cursor: "pointer" }}>
           <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><span style={{ padding: "4px 10px", borderRadius: 999, background: "var(--neutral-soft-bg)", color: "var(--text)", fontSize: 11, fontWeight: 700 }}>{CN[item.category] || item.category || "综合"}</span><span style={{ padding: "4px 10px", borderRadius: 999, background: meta.bg, color: meta.color, fontSize: 11, fontWeight: 700 }}>{meta.name}</span><span style={{ padding: "4px 10px", borderRadius: 999, background: item.is_due ? "var(--accent-soft-bg)" : "var(--neutral-soft-bg)", color: item.is_due ? "var(--accent)" : "var(--muted)", fontSize: 11, fontWeight: 700 }}>{item.is_due ? "待处理" : formatTime(item.next_review_at, item.is_due)}</span><span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)" }}>{item.paper_title || "未关联试卷"}</span></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><span style={{ padding: "4px 10px", borderRadius: 999, background: "var(--neutral-soft-bg)", color: "var(--text)", fontSize: 11, fontWeight: 700 }}>{getCategoryName(item.category, examTrack) || CN[item.category] || item.category || "综合"}</span><span style={{ padding: "4px 10px", borderRadius: 999, background: meta.bg, color: meta.color, fontSize: 11, fontWeight: 700 }}>{meta.name}</span><span style={{ padding: "4px 10px", borderRadius: 999, background: item.is_due ? "var(--accent-soft-bg)" : "var(--neutral-soft-bg)", color: item.is_due ? "var(--accent)" : "var(--muted)", fontSize: 11, fontWeight: 700 }}>{item.is_due ? "待处理" : formatTime(item.next_review_at, item.is_due)}</span><span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)" }}>{item.paper_title || "未关联试卷"}</span></div>
             <div style={{ fontSize: 14, lineHeight: 1.75, color: "var(--text)", fontWeight: 600 }}>
               {open ? <RichQuestionContent value={item.content_html || item.content} /> : (!item.content || item.content.length <= 110 ? item.content : `${item.content.slice(0, 110)}...`)}
             </div>

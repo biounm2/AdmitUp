@@ -8,6 +8,7 @@
 
 const OpenAI = require('openai');
 const Anthropic = require('@anthropic-ai/sdk');
+const { getCategories, getDefaultCategory } = require('../../shared/examTaxonomy');
 
 const OPENAI_COMPATIBLE_PROVIDERS = {
   openai: {
@@ -617,24 +618,33 @@ async function chatStream(settings, messages, options = {}) {
   return { success: true, content: text };
 }
 
-const CATEGORY_NAMES = {
-  yanyu: '言语理解与表达', shuliang: '数量关系', panduan: '判断推理',
-  ziliao: '资料分析', changshi: '常识判断',
-};
+function getCategoryNameMap(track = 'gongkao') {
+  return Object.fromEntries(getCategories(track).map((category) => [category.key, category.name]));
+}
 
 const EXAM_TRACK_NAMES = {
   gongkao: '考公',
-  shiye: '事业单位',
   kaoyan: '考研',
   self: '自定义备考',
 };
 
-const FOCUS_NAMES = {
-  standard: '通用组卷',
-  idiom: '成语练习',
-  current_affairs: '时政热点',
-  computer: '计算机基础',
-  custom: '自定义方向',
+const FOCUS_NAMES_BY_TRACK = {
+  gongkao: {
+    standard: '通用组卷',
+    idiom: '成语练习',
+    current_affairs: '时政热点',
+    computer: '计算机基础',
+    custom: '自定义方向',
+  },
+  kaoyan: {
+    standard: '考研综合',
+    math_foundation: '高数基础',
+    math_hard: '高数强化',
+    kaoyan_408: '408 专业课',
+    english_reading: '英语阅读',
+    politics_choice: '政治选择',
+    custom: '自定义方向',
+  },
 };
 
 const DIFFICULTY_NAMES = {
@@ -642,10 +652,14 @@ const DIFFICULTY_NAMES = {
 };
 
 function getTargetCategories(config = {}) {
+  const validKeys = getCategories(config?.track || 'gongkao').map((category) => category.key);
   const mixed = Array.isArray(config?.mixedCategories) ? config.mixedCategories.filter(Boolean) : [];
-  if (config?.mode === 'mixed' && mixed.length) return mixed;
+  if (config?.mode === 'mixed' && mixed.length) {
+    const filtered = mixed.filter((category) => validKeys.includes(category));
+    if (filtered.length) return filtered;
+  }
   const single = String(config?.category || '').trim();
-  return single ? [single] : ['changshi'];
+  return validKeys.includes(single) ? [single] : [getDefaultCategory(config?.track || 'gongkao')];
 }
 
 function getTrackLabel(config = {}) {
@@ -656,13 +670,31 @@ function getTrackLabel(config = {}) {
 }
 
 function getFocusLabel(config = {}) {
+  const focusNames = FOCUS_NAMES_BY_TRACK[config?.track] || FOCUS_NAMES_BY_TRACK.gongkao;
   if (config?.focus === 'custom') {
-    return String(config?.customFocusName || '').trim() || FOCUS_NAMES.custom;
+    return String(config?.customFocusName || '').trim() || focusNames.custom;
   }
-  return FOCUS_NAMES[config?.focus] || FOCUS_NAMES.standard;
+  return focusNames[config?.focus] || focusNames.standard;
 }
 
 function getFocusDirective(config = {}) {
+  if (config?.track === 'kaoyan') {
+    if (config?.focus === 'math_foundation') {
+      return '重点生成考研高等数学基础题，覆盖极限、连续、导数、微分、积分、级数、线性代数与概率统计的核心概念和常规计算。';
+    }
+    if (config?.focus === 'math_hard') {
+      return '重点生成考研数学强化题，包含综合计算、证明思路、参数讨论、跨章节综合与易错辨析，解析要突出步骤。';
+    }
+    if (config?.focus === 'kaoyan_408') {
+      return '重点生成计算机 408 专业课题，围绕数据结构、计算机组成原理、操作系统、计算机网络；若指定分类，必须贴合该分类。';
+    }
+    if (config?.focus === 'english_reading') {
+      return '重点生成考研英语阅读、长难句、词汇语法相关题目，题干和选项可使用英文，解析用中文说明考点。';
+    }
+    if (config?.focus === 'politics_choice') {
+      return '重点生成考研政治选择题，覆盖马原、毛中特、史纲、思修法基和时政热点，保持表述严谨。';
+    }
+  }
   if (config?.focus === 'idiom') {
     return '重点出成语辨析、近义词辨析、词语搭配与语境判断题，优先言语题型。';
   }
@@ -689,7 +721,8 @@ function getCurrentAffairsDirective(config = {}) {
 
 function buildGeneratePrompt(config) {
   const targetCategories = getTargetCategories(config);
-  const catName = targetCategories.map((key) => CATEGORY_NAMES[key] || key).join('、');
+  const categoryNames = getCategoryNameMap(config?.track || 'gongkao');
+  const catName = targetCategories.map((key) => categoryNames[key] || key).join('、');
   const diffName = DIFFICULTY_NAMES[config.difficulty] || '中等';
   const count = Math.max(1, Number(config?.count) || 10);
   const trackName = getTrackLabel(config);
@@ -789,7 +822,7 @@ function normalizeGeneratedQuestions(rawQuestions, config) {
     let category = String(question?.category || '').trim();
     if (!category) {
       category = fallbackCategory;
-    } else if (config?.mode === 'mixed' && targetCategories.length && !targetCategories.includes(category)) {
+    } else if (targetCategories.length && !targetCategories.includes(category)) {
       category = fallbackCategory;
     }
     return {

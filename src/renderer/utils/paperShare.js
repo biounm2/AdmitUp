@@ -1,6 +1,6 @@
 export function buildPaperShareText({ paper = {}, questions = [] } = {}) {
   const list = Array.isArray(questions) ? questions : [];
-  const title = paper.title || 'OpenExam 试卷';
+  const title = paper.title || 'AdmitUp 试卷';
   const typeLabel = paper.type === 'national' ? '国考' : (paper.province || '自定义');
   const duration = paper.duration || 120;
   const lines = [
@@ -12,7 +12,7 @@ export function buildPaperShareText({ paper = {}, questions = [] } = {}) {
     '题目预览：',
     ...list.slice(0, 3).map((question, index) => `${index + 1}. ${(question.content || '').replace(/\s+/g, ' ').slice(0, 54)}${(question.content || '').length > 54 ? '…' : ''}`),
     '',
-    '来自 OpenExam，可导出 PDF 继续练习。',
+    '来自 AdmitUp，可导出 PDF 继续练习。',
   ];
   return lines.join('\n');
 }

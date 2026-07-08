@@ -47,7 +47,7 @@ function normalizePayload(payload = {}) {
 
   return {
     paper: {
-      title: String(paper.title || 'OpenExam 试卷'),
+      title: String(paper.title || 'AdmitUp 试卷'),
       year: paper.year || new Date().getFullYear(),
       duration: Number(paper.duration || 120),
       type: String(paper.type || 'custom'),
@@ -150,7 +150,7 @@ function buildPaperHtml(payload) {
     <section class="cover">
       <div class="hero">
         <h1>${escapeHtml(paper.title)}</h1>
-        <p>OpenExam 导出的可打印试卷，可直接归档或发送给同学 / 学员。</p>
+        <p>AdmitUp 导出的可打印试卷，可直接归档或发送给同学 / 学员。</p>
       </div>
       <div class="meta-grid">
         <div class="meta-card"><div class="meta-label">题量</div><div class="meta-value">${questions.length} 题</div></div>
@@ -160,7 +160,7 @@ function buildPaperHtml(payload) {
       </div>
       <div class="section-title">试题正文</div>
       ${questions.map(renderQuestion).join('')}
-      <div class="footer-note">生成时间 ${escapeHtml(new Date().toLocaleString())} · OpenExam</div>
+      <div class="footer-note">生成时间 ${escapeHtml(new Date().toLocaleString())} · AdmitUp</div>
     </section>
     <section class="page-break">
       <div class="section-title">参考答案与解析</div>

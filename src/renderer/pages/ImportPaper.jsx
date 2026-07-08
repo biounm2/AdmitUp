@@ -2,40 +2,31 @@ import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { getAISettings, isAIConfigured, isOCRConfigured } from '../store/aiSettings.js';
 import { useDialog } from '../components/DialogProvider.jsx';
-
-const categoryConfig = {
-  yanyu: { name: '言语理解', color: 'var(--category-yanyu)' },
-  shuliang: { name: '数量关系', color: 'var(--category-shuliang)' },
-  panduan: { name: '判断推理', color: 'var(--category-panduan)' },
-  ziliao: { name: '资料分析', color: 'var(--category-ziliao)' },
-  changshi: { name: '常识判断', color: 'var(--category-changshi)' },
-};
-
-// 子分类配置
-const subCategoryConfig = {
-  yanyu: ['选词填空', '片段阅读', '语句表达', '文章阅读'],
-  shuliang: ['数学运算', '数字推理'],
-  panduan: ['图形推理', '定义判断', '类比推理', '逻辑判断'],
-  ziliao: ['文字资料', '表格资料', '图形资料', '综合资料'],
-  changshi: ['政治', '经济', '法律', '科技', '人文', '地理'],
-};
-
-// 所有子分类合并
-const allSubCategories = Object.values(subCategoryConfig).flat();
+import {
+  getCategories,
+  getCategoryNameToKey,
+  getDefaultCategory,
+  getSubjectForTrack,
+} from '../utils/examTaxonomy.js';
 
 // 下载 Excel 模板（带下拉验证）
-function downloadTemplate() {
+function downloadTemplate(examTrack = 'gongkao') {
   const wb = XLSX.utils.book_new();
+  const categories = getCategories(examTrack);
+  const allSubCategories = categories.flatMap((category) => (
+    category.subCategories.map((subCategory) => subCategory.name)
+  ));
+  const firstCategory = categories[0];
+  const firstSubCategory = firstCategory?.subCategories?.[0];
 
   // 主数据 + 右侧分类说明
   const wsData = [
     ['题目内容', '选项A', '选项B', '选项C', '选项D', '正确答案', '解析', '分类', '子分类', '', '', '分类说明'],
-    ['下列说法正确的是：', '选项A内容', '选项B内容', '选项C内容', '选项D内容', 'A', '解析内容', '言语理解', '选词填空', '', '', '分类', '可选子分类'],
-    ['', '', '', '', '', '', '', '', '', '', '', '言语理解', '选词填空, 片段阅读, 语句表达, 文章阅读'],
-    ['', '', '', '', '', '', '', '', '', '', '', '数量关系', '数学运算, 数字推理'],
-    ['', '', '', '', '', '', '', '', '', '', '', '判断推理', '图形推理, 定义判断, 类比推理, 逻辑判断'],
-    ['', '', '', '', '', '', '', '', '', '', '', '资料分析', '文字资料, 表格资料, 图形资料, 综合资料'],
-    ['', '', '', '', '', '', '', '', '', '', '', '常识判断', '政治, 经济, 法律, 科技, 人文, 地理'],
+    ['下列说法正确的是：', '选项A内容', '选项B内容', '选项C内容', '选项D内容', 'A', '解析内容', firstCategory?.name || '综合', firstSubCategory?.name || '', '', '', '分类', '可选子分类'],
+    ...categories.map((category) => [
+      '', '', '', '', '', '', '', '', '', '', '', category.name,
+      category.subCategories.map((subCategory) => subCategory.name).join(', '),
+    ]),
   ];
 
   // 添加空行供用户填写
@@ -55,7 +46,7 @@ function downloadTemplate() {
   // 数据验证（下拉列表）
   ws['!dataValidation'] = [
     { sqref: 'F2:F102', type: 'list', formula1: '"A,B,C,D"' },
-    { sqref: 'H2:H102', type: 'list', formula1: '"言语理解,数量关系,判断推理,资料分析,常识判断"' },
+    { sqref: 'H2:H102', type: 'list', formula1: `"${categories.map((category) => category.name).join(',')}"` },
     { sqref: 'I2:I102', type: 'list', formula1: `"${allSubCategories.join(',')}"` },
   ];
 
@@ -63,13 +54,20 @@ function downloadTemplate() {
   XLSX.writeFile(wb, '题目导入模板.xlsx');
 }
 
-export default function ImportPaper({ onBack, onImportComplete }) {
+export default function ImportPaper({ onBack, onImportComplete, examTrack = 'gongkao' }) {
+  const categories = getCategories(examTrack);
+  const categoryConfig = Object.fromEntries(categories.map((category) => [
+    category.key,
+    { name: category.name, color: category.color },
+  ]));
+  const categoryNameToKey = getCategoryNameToKey(examTrack);
+  const defaultCategory = getDefaultCategory(examTrack);
   const [step, setStep] = useState(0); // 0: 选择方式, 1: 选择文件, 2: 配置选项, 3: 预览确认, 4: 解析结果
   const [importMode, setImportMode] = useState(null); // 'ai' | 'template'
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [config, setConfig] = useState({
-    category: 'yanyu',
+    category: defaultCategory,
     paperTitle: '',
     year: new Date().getFullYear(),
   });
@@ -79,6 +77,12 @@ export default function ImportPaper({ onBack, onImportComplete }) {
   const [showHistory, setShowHistory] = useState(false);
   const [importHistory, setImportHistory] = useState([]);
   const { alert: showAlert } = useDialog();
+
+  useEffect(() => {
+    setConfig((prev) => (
+      categoryConfig[prev.category] ? prev : { ...prev, category: defaultCategory }
+    ));
+  }, [defaultCategory, examTrack]);
 
   // 加载导入历史
   useEffect(() => {
@@ -197,15 +201,6 @@ export default function ImportPaper({ onBack, onImportComplete }) {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  };
-
-  // 分类名称映射
-  const categoryNameToKey = {
-    '言语理解': 'yanyu',
-    '数量关系': 'shuliang',
-    '判断推理': 'panduan',
-    '资料分析': 'ziliao',
-    '常识判断': 'changshi',
   };
 
   const normalizeJsonQuestion = (rawQuestion) => {
@@ -406,7 +401,7 @@ export default function ImportPaper({ onBack, onImportComplete }) {
       // 保存到数据库
       if (window.openexam?.db) {
         const result = await window.openexam.db.importPaper(
-          { title: config.paperTitle, year: config.year },
+          { title: config.paperTitle, year: config.year, subject: getSubjectForTrack(examTrack), category: config.category },
           parsedQuestions
         );
         await showAlert({ title: '导入成功', message: `共导入 ${result.questionCount} 道题目`, tone: 'success' });
@@ -513,7 +508,7 @@ export default function ImportPaper({ onBack, onImportComplete }) {
                 </div>
                 <span className="mode-title">模板导入</span>
                 <span className="mode-desc">下载 CSV 模板，按格式填写后上传</span>
-                <button className="mode-download" onClick={(e) => { e.stopPropagation(); downloadTemplate(); }}>
+                <button className="mode-download" onClick={(e) => { e.stopPropagation(); downloadTemplate(examTrack); }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                     <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
@@ -552,7 +547,7 @@ export default function ImportPaper({ onBack, onImportComplete }) {
               />
             </div>
             {importMode === 'template' && (
-              <button className="template-btn" onClick={downloadTemplate}>
+              <button className="template-btn" onClick={() => downloadTemplate(examTrack)}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                   <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>

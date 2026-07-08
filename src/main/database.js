@@ -480,13 +480,15 @@ function savePracticeRecord(record) {
 }
 
 // 获取练习记录
-function getPracticeRecords() {
+function getPracticeRecords(options = {}) {
+  const filter = getPracticeRecordSubjectFilter(options);
   const rows = db.prepare(`
     SELECT pr.*, p.title as paper_title
     FROM practice_records pr
     LEFT JOIN papers p ON pr.paper_id = p.id
+    WHERE 1 = 1 ${filter.clause}
     ORDER BY pr.start_time DESC
-  `).all();
+  `).all(...filter.params);
   return rows.map(row => ({
     ...row,
     answers: row.answers ? JSON.parse(row.answers) : {}
@@ -545,8 +547,9 @@ function getWrongQuestionById(id) {
 function getWrongQuestions(options = {}) {
   const dueOnly = Boolean(options && options.dueOnly);
   const limit = Number(options && options.limit);
-  const params = [];
-  const where = dueOnly ? `WHERE COALESCE(wq.next_review_at, wq.added_at, datetime('now')) <= datetime('now')` : '';
+  const filter = getSubjectFilter(options);
+  const params = [...filter.params];
+  const where = `WHERE 1 = 1 ${filter.clause}${dueOnly ? ` AND COALESCE(wq.next_review_at, wq.added_at, datetime('now')) <= datetime('now')` : ''}`;
   const limitSql = Number.isFinite(limit) && limit > 0 ? ' LIMIT ?' : '';
   if (limitSql) params.push(Math.floor(limit));
 
@@ -591,15 +594,45 @@ function reviewWrongQuestion(questionId, outcome = 'again') {
 }
 
 // 获取分类统计
-function getCategoryStats() {
+function getSubjectFilter(options = {}) {
+  const subject = String(options?.subject || '').trim();
+  if (!subject) return { clause: '', params: [] };
+  return {
+    clause: ` AND COALESCE(NULLIF(p.subject, ''), 'xingce') = ?`,
+    params: [subject],
+  };
+}
+
+function getPracticeRecordSubjectFilter(options = {}) {
+  const subject = String(options?.subject || '').trim();
+  if (!subject) return { clause: '', params: [] };
+  return {
+    clause: ` AND (
+      COALESCE(NULLIF(p.subject, ''), 'xingce') = ?
+      OR EXISTS (
+        SELECT 1
+        FROM json_each(pr.answers) answer_keys
+        INNER JOIN questions q2 ON q2.id = answer_keys.key
+        LEFT JOIN papers p2 ON p2.id = q2.paper_id
+        WHERE COALESCE(NULLIF(p2.subject, ''), 'xingce') = ?
+      )
+    )`,
+    params: [subject, subject],
+  };
+}
+
+function getCategoryStats(options = {}) {
+  const filter = getSubjectFilter(options);
   const stats = db.prepare(`
     SELECT
-      category,
+      q.category,
       COUNT(*) as total,
       0 as done
-    FROM questions
-    GROUP BY category
-  `).all();
+    FROM questions q
+    LEFT JOIN papers p ON p.id = q.paper_id
+    WHERE 1 = 1 ${filter.clause}
+    GROUP BY q.category
+  `).all(...filter.params);
 
   // 获取已做题数（从练习记录中统计）
   const doneStats = db.prepare(`
@@ -609,9 +642,11 @@ function getCategoryStats() {
     FROM practice_records pr
     JOIN json_each(pr.answers) answer_keys
     INNER JOIN questions q ON q.id = answer_keys.key
+    LEFT JOIN papers p ON p.id = q.paper_id
     WHERE pr.status = 'completed'
+      ${filter.clause}
     GROUP BY q.category
-  `).all();
+  `).all(...filter.params);
 
   const doneMap = {};
   doneStats.forEach(d => { doneMap[d.category] = d.done; });
@@ -623,20 +658,26 @@ function getCategoryStats() {
 }
 
 // 获取子分类统计
-function getSubCategoryStats(category) {
+function getSubCategoryStats(category, options = {}) {
+  const filter = getSubjectFilter(options);
   return db.prepare(`
     SELECT
-      sub_category as subCategory,
+      q.sub_category as subCategory,
       COUNT(*) as count
-    FROM questions
-    WHERE category = ?
-    GROUP BY sub_category
-    ORDER BY count DESC, sub_category ASC
-  `).all(category);
+    FROM questions q
+    LEFT JOIN papers p ON p.id = q.paper_id
+    WHERE q.category = ? ${filter.clause}
+    GROUP BY q.sub_category
+    ORDER BY count DESC, q.sub_category ASC
+  `).all(category, ...filter.params);
 }
 
 function repairQuestionTaxonomy() {
-  const rows = db.prepare('SELECT id, category, sub_category, content FROM questions').all();
+  const rows = db.prepare(`
+    SELECT q.id, q.category, q.sub_category, q.content, p.subject
+    FROM questions q
+    LEFT JOIN papers p ON p.id = q.paper_id
+  `).all();
   const update = db.prepare('UPDATE questions SET category = ?, sub_category = ? WHERE id = ?');
   let changed = 0;
 
@@ -646,7 +687,7 @@ function repairQuestionTaxonomy() {
         category: row.category,
         sub_category: row.sub_category,
         content: row.content,
-      });
+      }, { subject: row.subject });
 
       if (next.category !== row.category || next.subCategory !== (row.sub_category || '')) {
         update.run(next.category, next.subCategory, row.id);
@@ -663,24 +704,56 @@ function repairQuestionCategories() {
 }
 
 // 获取练习统计
-function getPracticeStats() {
-  const totalQuestions = db.prepare('SELECT COUNT(*) as count FROM questions').get().count;
+function getPracticeStats(options = {}) {
+  const filter = getSubjectFilter(options);
+  const totalQuestions = db.prepare(`
+    SELECT COUNT(*) as count
+    FROM questions q
+    LEFT JOIN papers p ON p.id = q.paper_id
+    WHERE 1 = 1 ${filter.clause}
+  `).get(...filter.params).count;
 
-  const completedRecords = db.prepare(`
-    SELECT COUNT(*) as count, SUM(correct_count) as correct, SUM(total_count) as total
-    FROM practice_records
-    WHERE status = 'completed'
-  `).get();
+  const completedRecords = filter.params.length
+    ? db.prepare(`
+        SELECT
+          COUNT(DISTINCT q.id) as count,
+          SUM(CASE
+            WHEN UPPER(TRIM(CAST(answer_keys.value AS TEXT))) = UPPER(TRIM(q.answer)) THEN 1
+            ELSE 0
+          END) as correct,
+          COUNT(DISTINCT q.id) as total
+        FROM practice_records pr
+        JOIN json_each(pr.answers) answer_keys
+        INNER JOIN questions q ON q.id = answer_keys.key
+        LEFT JOIN papers p ON p.id = q.paper_id
+        WHERE pr.status = 'completed'
+          ${filter.clause}
+      `).get(...filter.params)
+    : db.prepare(`
+        SELECT COUNT(*) as count, SUM(correct_count) as correct, SUM(total_count) as total
+        FROM practice_records
+        WHERE status = 'completed'
+      `).get();
 
-  const wrongCount = db.prepare('SELECT COUNT(*) as count FROM wrong_questions').get().count;
+  const wrongCount = filter.params.length
+    ? db.prepare(`
+        SELECT COUNT(*) as count
+        FROM wrong_questions wq
+        INNER JOIN questions q ON q.id = wq.question_id
+        LEFT JOIN papers p ON p.id = q.paper_id
+        WHERE 1 = 1 ${filter.clause}
+      `).get(...filter.params).count
+    : db.prepare('SELECT COUNT(*) as count FROM wrong_questions').get().count;
 
   // 今日新增题目数 - 检查列是否存在
   let todayAdded = 0;
   try {
     todayAdded = db.prepare(`
-      SELECT COUNT(*) as count FROM questions
-      WHERE DATE(created_at) = DATE('now')
-    `).get().count;
+      SELECT COUNT(*) as count
+      FROM questions q
+      LEFT JOIN papers p ON p.id = q.paper_id
+      WHERE DATE(q.created_at) = DATE('now') ${filter.clause}
+    `).get(...filter.params).count;
   } catch (e) {
     // created_at 列不存在，返回 0
   }
@@ -750,6 +823,7 @@ function savePaperBundle(paperData = {}, questions = [], fallbackType = 'importe
   );
   const difficulty = Math.max(1, Math.min(5, Number(paperData.difficulty) || 3));
   const paperTitle = String(paperData.title || '').trim() || (paperType === 'ai_practice' ? 'AI 自定义练习' : '导入试卷');
+  const paperSubject = String(paperData.subject || 'xingce').trim() || 'xingce';
 
   const insertPaper = db.prepare(`
     INSERT INTO papers (id, title, year, type, subject, province, question_count, duration, difficulty, created_at)
@@ -767,7 +841,7 @@ function savePaperBundle(paperData = {}, questions = [], fallbackType = 'importe
       paperTitle,
       Number(paperData.year) || new Date().getFullYear(),
       paperType,
-      String(paperData.subject || 'xingce').trim() || 'xingce',
+      paperSubject,
       normalizePaperProvince(paperData.province),
       normalizedQuestions.length,
       duration,
@@ -781,10 +855,10 @@ function savePaperBundle(paperData = {}, questions = [], fallbackType = 'importe
       const contentHtml = String(q.contentHtml || q.content_html || '');
       const analysisHtml = String(q.analysisHtml || q.analysis_html || '');
       const taxonomy = normalizeQuestionTaxonomy({
-        category: q.category || paperData.category || 'yanyu',
+        category: q.category || paperData.category || '',
         subCategory: q.subCategory || q.sub_category || paperData.subCategory || '',
         content,
-      });
+      }, { subject: paperSubject });
       insertQuestion.run(
         questionId,
         paperId,
@@ -827,12 +901,13 @@ function getImportedPapers() {
   `).all());
 }
 
-function getSavedAIPapers() {
+function getSavedAIPapers(options = {}) {
+  const filter = getSubjectFilter(options);
   return normalizePaperRecords(db.prepare(`
-    SELECT * FROM papers
-    WHERE type IN ('ai_exam', 'ai_practice')
+    SELECT p.* FROM papers p
+    WHERE type IN ('ai_exam', 'ai_practice') ${filter.clause}
     ORDER BY created_at DESC
-  `).all());
+  `).all(...filter.params));
 }
 
 function getSavedPaperForManage(paperId) {
@@ -900,19 +975,37 @@ function getQuestionsByCategory(category, subCategory, limit, shuffle) {
 }
 
 // 获取过去 N 天每日练习量（用于首页动态折线图）
-function getDailyStats(days = 7) {
-  const rows = db.prepare(`
-    SELECT
-      DATE(start_time) as date,
-      COUNT(*) as sessions,
-      COALESCE(SUM(total_count), 0) as total,
-      COALESCE(SUM(correct_count), 0) as correct,
-      COALESCE(SUM(duration), 0) as duration
-    FROM practice_records
-    WHERE start_time >= DATE('now', '-' || ? || ' days')
-    GROUP BY DATE(start_time)
-    ORDER BY date ASC
-  `).all(days - 1);
+function getDailyStats(days = 7, options = {}) {
+  const filter = getSubjectFilter(options);
+  const rows = filter.params.length
+    ? db.prepare(`
+        SELECT
+          DATE(pr.start_time) as date,
+          COUNT(DISTINCT pr.id) as sessions,
+          COUNT(DISTINCT q.id) as total,
+          0 as correct,
+          COALESCE(SUM(DISTINCT pr.duration), 0) as duration
+        FROM practice_records pr
+        JOIN json_each(pr.answers) answer_keys
+        INNER JOIN questions q ON q.id = answer_keys.key
+        LEFT JOIN papers p ON p.id = q.paper_id
+        WHERE pr.start_time >= DATE('now', '-' || ? || ' days')
+          ${filter.clause}
+        GROUP BY DATE(pr.start_time)
+        ORDER BY date ASC
+      `).all(days - 1, ...filter.params)
+    : db.prepare(`
+        SELECT
+          DATE(start_time) as date,
+          COUNT(*) as sessions,
+          COALESCE(SUM(total_count), 0) as total,
+          COALESCE(SUM(correct_count), 0) as correct,
+          COALESCE(SUM(duration), 0) as duration
+        FROM practice_records
+        WHERE start_time >= DATE('now', '-' || ? || ' days')
+        GROUP BY DATE(start_time)
+        ORDER BY date ASC
+      `).all(days - 1);
 
   // 补全缺失日期为0
   const result = [];
@@ -933,12 +1026,23 @@ function getDailyStats(days = 7) {
 }
 
 // 获取连续签到天数（有练习记录即视为已签到）
-function getStreakDays() {
-  const rows = db.prepare(`
-    SELECT DISTINCT DATE(start_time) as date
-    FROM practice_records
-    ORDER BY date DESC
-  `).all();
+function getStreakDays(options = {}) {
+  const filter = getSubjectFilter(options);
+  const rows = filter.params.length
+    ? db.prepare(`
+        SELECT DISTINCT DATE(pr.start_time) as date
+        FROM practice_records pr
+        JOIN json_each(pr.answers) answer_keys
+        INNER JOIN questions q ON q.id = answer_keys.key
+        LEFT JOIN papers p ON p.id = q.paper_id
+        WHERE 1 = 1 ${filter.clause}
+        ORDER BY date DESC
+      `).all(...filter.params)
+    : db.prepare(`
+        SELECT DISTINCT DATE(start_time) as date
+        FROM practice_records
+        ORDER BY date DESC
+      `).all();
 
   if (rows.length === 0) return 0;
 
@@ -959,46 +1063,91 @@ function getStreakDays() {
 }
 
 // 获取总学习时长（分钟）
-function getTotalStudyMinutes() {
+function getTotalStudyMinutes(options = {}) {
+  const filter = getPracticeRecordSubjectFilter(options);
   const row = db.prepare(`
     SELECT COALESCE(SUM(duration), 0) as total
-    FROM practice_records
-    WHERE status = 'completed'
-  `).get();
+    FROM (
+      SELECT DISTINCT pr.id, pr.duration
+      FROM practice_records pr
+      LEFT JOIN papers p ON pr.paper_id = p.id
+      WHERE pr.status = 'completed' ${filter.clause}
+    ) scoped_records
+  `).get(...filter.params);
   return Math.floor((row?.total || 0) / 60);
 }
 
 // 获取今日学习数据
-function getTodayStats() {
+function getTodayStats(options = {}) {
   const today = new Date().toISOString().slice(0, 10);
-  const row = db.prepare(`
-    SELECT
-      COALESCE(SUM(total_count), 0) as total,
-      COALESCE(SUM(correct_count), 0) as correct,
-      COALESCE(SUM(duration), 0) as duration,
-      COUNT(*) as sessions
-    FROM practice_records
-    WHERE DATE(start_time) = ?
-  `).get(today);
+  const filter = getSubjectFilter(options);
+  const row = filter.params.length
+    ? db.prepare(`
+        SELECT
+          COUNT(q.id) as total,
+          COALESCE(SUM(CASE
+            WHEN UPPER(TRIM(CAST(answer_keys.value AS TEXT))) = UPPER(TRIM(q.answer)) THEN 1
+            ELSE 0
+          END), 0) as correct,
+          COUNT(DISTINCT pr.id) as sessions
+        FROM practice_records pr
+        JOIN json_each(pr.answers) answer_keys
+        INNER JOIN questions q ON q.id = answer_keys.key
+        LEFT JOIN papers p ON p.id = q.paper_id
+        WHERE DATE(pr.start_time) = ? ${filter.clause}
+      `).get(today, ...filter.params)
+    : db.prepare(`
+        SELECT
+          COALESCE(SUM(total_count), 0) as total,
+          COALESCE(SUM(correct_count), 0) as correct,
+          COUNT(*) as sessions
+        FROM practice_records
+        WHERE DATE(start_time) = ?
+      `).get(today);
+  const durationFilter = getPracticeRecordSubjectFilter(options);
+  const durationRow = db.prepare(`
+    SELECT COALESCE(SUM(duration), 0) as duration
+    FROM (
+      SELECT DISTINCT pr.id, pr.duration
+      FROM practice_records pr
+      LEFT JOIN papers p ON pr.paper_id = p.id
+      WHERE DATE(pr.start_time) = ? ${durationFilter.clause}
+    ) scoped_records
+  `).get(today, ...durationFilter.params);
   return {
     total: row?.total || 0,
     correct: row?.correct || 0,
-    duration: Math.floor((row?.duration || 0) / 60),
+    duration: Math.floor((durationRow?.duration || 0) / 60),
     sessions: row?.sessions || 0
   };
 }
 
 // 获取过去90天热力图数据（真实练习量）
-function getHeatmapData(days = 90) {
-  const rows = db.prepare(`
-    SELECT
-      DATE(start_time) as date,
-      COUNT(*) as sessions,
-      COALESCE(SUM(total_count), 0) as count
-    FROM practice_records
-    WHERE start_time >= DATE('now', '-' || ? || ' days')
-    GROUP BY DATE(start_time)
-  `).all(days);
+function getHeatmapData(days = 90, options = {}) {
+  const filter = getSubjectFilter(options);
+  const rows = filter.params.length
+    ? db.prepare(`
+        SELECT
+          DATE(pr.start_time) as date,
+          COUNT(DISTINCT pr.id) as sessions,
+          COUNT(q.id) as count
+        FROM practice_records pr
+        JOIN json_each(pr.answers) answer_keys
+        INNER JOIN questions q ON q.id = answer_keys.key
+        LEFT JOIN papers p ON p.id = q.paper_id
+        WHERE pr.start_time >= DATE('now', '-' || ? || ' days')
+          ${filter.clause}
+        GROUP BY DATE(pr.start_time)
+      `).all(days, ...filter.params)
+    : db.prepare(`
+        SELECT
+          DATE(start_time) as date,
+          COUNT(*) as sessions,
+          COALESCE(SUM(total_count), 0) as count
+        FROM practice_records
+        WHERE start_time >= DATE('now', '-' || ? || ' days')
+        GROUP BY DATE(start_time)
+      `).all(days);
 
   const map = {};
   rows.forEach((row) => {
@@ -1030,34 +1179,72 @@ function getHeatmapData(days = 90) {
 }
 
 // 获取成就解锁状态
-function getAchievementMetrics(metrics = {}) {
-  const practiceStats = metrics.practiceStats || getPracticeStats();
+function getAchievementMetrics(metrics = {}, options = {}) {
+  const practiceStats = metrics.practiceStats || getPracticeStats(options);
   const totalDone = practiceStats.totalDone || 0;
+  const filter = getSubjectFilter(options);
+  const recordFilter = getPracticeRecordSubjectFilter(options);
 
   const perfectCount = db.prepare(`
-    SELECT COUNT(*) as c FROM practice_records
-    WHERE accuracy = 100 AND status = 'completed' AND paper_id IS NOT NULL
-  `).get().c;
+    SELECT COUNT(*) as c
+    FROM practice_records pr
+    LEFT JOIN papers p ON pr.paper_id = p.id
+    WHERE pr.accuracy = 100 AND pr.status = 'completed' AND pr.paper_id IS NOT NULL ${recordFilter.clause}
+  `).get(...recordFilter.params).c;
 
   const speedCount = db.prepare(`
-    SELECT COUNT(*) as c FROM practice_records
-    WHERE duration <= 30 AND correct_count >= 1 AND status = 'completed'
-  `).get().c;
+    SELECT COUNT(*) as c
+    FROM practice_records pr
+    LEFT JOIN papers p ON pr.paper_id = p.id
+    WHERE pr.duration <= 30 AND pr.correct_count >= 1 AND pr.status = 'completed' ${recordFilter.clause}
+  `).get(...recordFilter.params).c;
 
-  const sessions = db.prepare(`SELECT COUNT(*) as c FROM practice_records WHERE status = 'completed'`).get().c;
-  const wrongCount = db.prepare(`SELECT COUNT(*) as c FROM wrong_questions`).get().c;
-  const reviewCount = db.prepare(`SELECT COALESCE(SUM(review_count), 0) as c FROM wrong_questions`).get().c;
-  const studyDays = db.prepare(`SELECT COUNT(DISTINCT DATE(start_time)) as c FROM practice_records WHERE status = 'completed'`).get().c;
+  const sessions = db.prepare(`
+    SELECT COUNT(*) as c
+    FROM practice_records pr
+    LEFT JOIN papers p ON pr.paper_id = p.id
+    WHERE pr.status = 'completed' ${recordFilter.clause}
+  `).get(...recordFilter.params).c;
+  const wrongCount = db.prepare(`
+    SELECT COUNT(*) as c
+    FROM wrong_questions wq
+    INNER JOIN questions q ON q.id = wq.question_id
+    LEFT JOIN papers p ON p.id = q.paper_id
+    WHERE 1 = 1 ${filter.clause}
+  `).get(...filter.params).c;
+  const reviewCount = db.prepare(`
+    SELECT COALESCE(SUM(wq.review_count), 0) as c
+    FROM wrong_questions wq
+    INNER JOIN questions q ON q.id = wq.question_id
+    LEFT JOIN papers p ON p.id = q.paper_id
+    WHERE 1 = 1 ${filter.clause}
+  `).get(...filter.params).c;
+  const studyDays = db.prepare(`
+    SELECT COUNT(DISTINCT DATE(pr.start_time)) as c
+    FROM practice_records pr
+    LEFT JOIN papers p ON pr.paper_id = p.id
+    WHERE pr.status = 'completed' ${recordFilter.clause}
+  `).get(...recordFilter.params).c;
   const categoryCoverage = db.prepare(`
     SELECT COUNT(DISTINCT q.category) as c
     FROM practice_records pr
     JOIN json_each(pr.answers) answer_keys
     INNER JOIN questions q ON q.id = answer_keys.key
-    WHERE pr.status = 'completed'
-  `).get().c;
-  const savedAIPapers = db.prepare(`SELECT COUNT(*) as c FROM papers WHERE type IN ('ai_exam', 'ai_practice')`).get().c;
+    LEFT JOIN papers p ON p.id = q.paper_id
+    WHERE pr.status = 'completed' ${filter.clause}
+  `).get(...filter.params).c;
+  const savedAIPapers = db.prepare(`
+    SELECT COUNT(*) as c
+    FROM papers p
+    WHERE type IN ('ai_exam', 'ai_practice') ${filter.clause}
+  `).get(...filter.params).c;
 
-  const totalQuestions = db.prepare('SELECT COUNT(*) as c FROM questions').get().c;
+  const totalQuestions = db.prepare(`
+    SELECT COUNT(*) as c
+    FROM questions q
+    LEFT JOIN papers p ON p.id = q.paper_id
+    WHERE 1 = 1 ${filter.clause}
+  `).get(...filter.params).c;
   const mastery = totalQuestions > 0 ? Math.round((totalDone / totalQuestions) * 100) : 0;
 
   return {
@@ -1074,13 +1261,13 @@ function getAchievementMetrics(metrics = {}) {
   };
 }
 
-function getAchievements(metrics = {}) {
-  const practiceStats = metrics.practiceStats || getPracticeStats();
+function getAchievements(metrics = {}, options = {}) {
+  const practiceStats = metrics.practiceStats || getPracticeStats(options);
   const totalDone = Number(practiceStats.totalDone) || 0;
   const accuracy = Number(practiceStats.accuracy) || 0;
-  const streak = typeof metrics.streak === 'number' ? metrics.streak : getStreakDays();
-  const totalMinutes = typeof metrics.totalMinutes === 'number' ? metrics.totalMinutes : getTotalStudyMinutes();
-  const achievementMetrics = metrics.achievementMetrics || getAchievementMetrics({ practiceStats });
+  const streak = typeof metrics.streak === 'number' ? metrics.streak : getStreakDays(options);
+  const totalMinutes = typeof metrics.totalMinutes === 'number' ? metrics.totalMinutes : getTotalStudyMinutes(options);
+  const achievementMetrics = metrics.achievementMetrics || getAchievementMetrics({ practiceStats }, options);
   const context = {
     totalDone,
     accuracy,
@@ -1150,14 +1337,14 @@ function getAchievements(metrics = {}) {
 }
 
 // 获取综合成长中心数据（一次性聚合）
-function getGrowthData() {
-  const streak = getStreakDays();
-  const today = getTodayStats();
-  const heatmap = getHeatmapData(90);
-  const practiceStats = getPracticeStats();
-  const totalMinutes = getTotalStudyMinutes();
-  const achievementMetrics = getAchievementMetrics({ practiceStats });
-  const achievements = getAchievements({ practiceStats, totalMinutes, streak, achievementMetrics });
+function getGrowthData(options = {}) {
+  const streak = getStreakDays(options);
+  const today = getTodayStats(options);
+  const heatmap = getHeatmapData(90, options);
+  const practiceStats = getPracticeStats(options);
+  const totalMinutes = getTotalStudyMinutes(options);
+  const achievementMetrics = getAchievementMetrics({ practiceStats }, options);
+  const achievements = getAchievements({ practiceStats, totalMinutes, streak, achievementMetrics }, options);
 
   // 计算等级 EXP（基于总做题数）
   const totalDone = practiceStats.totalDone || 0;
@@ -1497,7 +1684,7 @@ function importAllData(payload = {}) {
       paperIds.add(id);
       insertPaper.run(
         id,
-        String(paper.title || 'OpenExam 试卷').trim() || 'OpenExam 试卷',
+        String(paper.title || 'AdmitUp 试卷').trim() || 'AdmitUp 试卷',
         Number(paper.year) || new Date().getFullYear(),
         String(paper.type || 'provincial').trim() || 'provincial',
         String(paper.subject || 'xingce').trim() || 'xingce',
@@ -1515,11 +1702,12 @@ function importAllData(payload = {}) {
       const content = String(question?.content || '').trim();
       if (!questionId || !paperIds.has(paperId) || !content) return;
       questionIds.add(questionId);
+      const paperSubject = papers.find((paper) => String(paper?.id || '').trim() === paperId)?.subject || 'xingce';
       const taxonomy = normalizeQuestionTaxonomy({
         category: question.category,
         subCategory: question.sub_category,
         content,
-      });
+      }, { subject: paperSubject });
       insertQuestion.run(
         questionId,
         paperId,

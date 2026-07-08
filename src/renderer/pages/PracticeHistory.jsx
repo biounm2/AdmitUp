@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getCategoryName, getSubjectForTrack } from '../utils/examTaxonomy.js';
 
 const categoryNames = {
   yanyu: '言语理解',
@@ -8,7 +9,7 @@ const categoryNames = {
   changshi: '常识判断'
 };
 
-export default function PracticeHistory({ onBack }) {
+export default function PracticeHistory({ onBack, examTrack = 'gongkao' }) {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, avgAccuracy: 0, totalTime: 0 });
@@ -20,7 +21,8 @@ export default function PracticeHistory({ onBack }) {
         return;
       }
       try {
-        const allRecords = await window.openexam.db.getPracticeRecords();
+        const subject = getSubjectForTrack(examTrack);
+        const allRecords = await window.openexam.db.getPracticeRecords({ subject });
         const data = (allRecords || []).filter((record) => String(record?.status || '').toLowerCase() === 'completed');
         setRecords(data || []);
 
@@ -30,6 +32,8 @@ export default function PracticeHistory({ onBack }) {
           const avgAccuracy = Math.round(data.reduce((sum, r) => sum + (r.accuracy || 0), 0) / total);
           const totalTime = data.reduce((sum, r) => sum + (r.duration || 0), 0);
           setStats({ total, avgAccuracy, totalTime });
+        } else {
+          setStats({ total: 0, avgAccuracy: 0, totalTime: 0 });
         }
       } catch (err) {
         console.error('加载练习记录失败:', err);
@@ -37,7 +41,7 @@ export default function PracticeHistory({ onBack }) {
       setLoading(false);
     };
     loadRecords();
-  }, []);
+  }, [examTrack]);
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '-';
@@ -145,7 +149,7 @@ export default function PracticeHistory({ onBack }) {
                   )}
                 </div>
                 <div className="hr-info">
-                  <span className="hr-title">{record.paper_title || categoryNames[record.category] || record.category || '综合练习'}</span>
+                  <span className="hr-title">{record.paper_title || getCategoryName(record.category, examTrack) || categoryNames[record.category] || record.category || '综合练习'}</span>
                   <span className="hr-meta">{formatDate(record.created_at)} · {record.total_count || 0}题 · {formatDuration(record.duration)}</span>
                 </div>
               </div>

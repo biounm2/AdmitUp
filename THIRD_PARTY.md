@@ -2,7 +2,7 @@
 
 ## Code License
 
-OpenExam repository source code is licensed under `GPL-3.0-or-later`.
+AdmitUp repository source code is licensed under `GPL-3.0-or-later`.
 
 ## Third-Party Data and Assets
 

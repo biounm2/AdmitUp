@@ -17,14 +17,13 @@ import { actions, getState } from "./store/examStore.js";
 import { normalizeAISettings } from "./store/aiSettings.js";
 import appLogo from "./assets/openexam-logo.png";
 import { useDialog } from "./components/DialogProvider.jsx";
+import { getCategories, getCategoryName, getSubjectForTrack } from "./utils/examTaxonomy.js";
 
 const EXAM_TRACK_STORAGE_KEY = "openexam_exam_track_v1";
 const EXAM_TRACK_SETTING_KEY = "exam_track";
 const EXAM_TRACK_OPTIONS = [
   { key: "gongkao", label: "考公" },
-  { key: "shiye", label: "事业单位" },
   { key: "kaoyan", label: "考研" },
-  { key: "self", label: "自定义" },
 ];
 
 function normalizeExamTrack(input) {
@@ -342,7 +341,7 @@ export default function App() {
       updatePromptedVersionRef.current = version;
       const confirmed = await showConfirm({
         title: '更新已就绪',
-        message: `OpenExam ${payload.latestVersion || ''} 已下载完成，是否现在重启安装？`.trim(),
+        message: `AdmitUp ${payload.latestVersion || ''} 已下载完成，是否现在重启安装？`.trim(),
         confirmText: '立即安装',
         cancelText: '稍后',
         tone: 'success',
@@ -445,7 +444,7 @@ export default function App() {
 
   const findResumableRecord = async (paperId) => {
     if (!paperId || !window.openexam?.db?.getPracticeRecords) return null;
-    const records = await window.openexam.db.getPracticeRecords();
+    const records = await window.openexam.db.getPracticeRecords({ subject: getSubjectForTrack(examTrack) });
     return (records || []).find((record) => (
       record?.paper_id === paperId &&
       ['ongoing', 'paused'].includes(String(record?.status || '').toLowerCase()) &&
@@ -747,9 +746,9 @@ export default function App() {
           <header className="workspace-header">
             <div className="workspace-header-main">
               <button className="app-brand" type="button" onClick={() => { setActiveTab('学习中心'); setPage('home'); }}>
-                <img src={appLogo} alt="OpenExam" className="app-brand-logo" />
+                <img src={appLogo} alt="AdmitUp" className="app-brand-logo" />
                 <div className="app-brand-copy">
-                  <strong>OpenExam</strong>
+                  <strong>AdmitUp</strong>
                   <span>AI 备考空间</span>
                 </div>
               </button>
@@ -872,9 +871,10 @@ export default function App() {
                 onGoAIGenerate={handleGoToAIGenerate}
               />
             ) : page === "history" ? (
-              <PracticeHistory onBack={() => setPage("practice")} />
+              <PracticeHistory examTrack={examTrack} onBack={() => setPage("practice")} />
             ) : page === "import" ? (
               <ImportPaper
+                examTrack={examTrack}
                 onBack={() => setPage("practice")}
                 onImportComplete={(data) => {
                   console.log('导入数据:', data);
@@ -889,13 +889,13 @@ export default function App() {
             ) : page === "ai-teacher" ? (
               <AITeacher />
             ) : page === "wrong-book" ? (
-              <WrongBook onRedo={handleStartWrongRedo} />
+              <WrongBook examTrack={examTrack} onRedo={handleStartWrongRedo} />
             ) : page === "analytics" ? (
-              <Analytics onOpenSettings={() => setPage("settings")} />
+              <Analytics examTrack={examTrack} onOpenSettings={() => setPage("settings")} />
             ) : page === "growth" ? (
-              <GrowthCenter onOpenAchievements={() => { setActiveTab("我的成长"); setPage("achievements"); }} />
+              <GrowthCenter examTrack={examTrack} onOpenAchievements={() => { setActiveTab("我的成长"); setPage("achievements"); }} />
             ) : page === "achievements" ? (
-              <AchievementCenter onBack={() => { setActiveTab("我的成长"); setPage("growth"); }} />
+              <AchievementCenter examTrack={examTrack} onBack={() => { setActiveTab("我的成长"); setPage("growth"); }} />
             ) : (
               <OriginalHomePage examTrack={examTrack} onGoAIGenerate={handleGoToAIGenerate} />
             )}
@@ -914,25 +914,32 @@ function OriginalHomePage({ examTrack = "gongkao", onGoAIGenerate }) {
   const [categories, setCategories] = useState([]);
   const [dailyStats, setDailyStats] = useState([]);
   const [hoverDay, setHoverDay] = useState(null);
+  const taxonomyCategories = getCategories(examTrack);
 
   useEffect(() => {
     const loadData = async () => {
       if (!window.openexam?.db) return;
       try {
+        const subject = getSubjectForTrack(examTrack);
         const [practiceStats, categoryStats, daily] = await Promise.all([
-          window.openexam.db.getPracticeStats(),
-          window.openexam.db.getCategoryStats(),
-          window.openexam.db.getDailyStats(7)
+          window.openexam.db.getPracticeStats({ subject }),
+          window.openexam.db.getCategoryStats({ subject }),
+          window.openexam.db.getDailyStats(7, { subject })
         ]);
+        const statMap = new Map(categoryStats.map((item) => [item.category, item]));
         setStats(practiceStats);
-        setCategories(categoryStats);
+        setCategories(taxonomyCategories.map((category) => ({
+          category: category.key,
+          total: statMap.get(category.key)?.total || 0,
+          done: statMap.get(category.key)?.done || 0,
+        })));
         setDailyStats(daily);
       } catch (err) {
         console.error('加载统计数据失败:', err);
       }
     };
     loadData();
-  }, []);
+  }, [examTrack]);
 
   const categoryNames = {
     yanyu: '言语理解',
@@ -1052,7 +1059,7 @@ function OriginalHomePage({ examTrack = "gongkao", onGoAIGenerate }) {
                    <div key={cat.category} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                      <span style={{ width: 60, height: 4, borderRadius: 2, background: idx === 0 ? "var(--accent)" : idx === 1 ? "var(--accent-soft-bg-strong)" : "var(--accent-soft-bg)" }} />
                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                       <span style={{ fontSize: 10, color: "var(--muted)" }}>{categoryNames[cat.category] || cat.category}</span>
+                       <span style={{ fontSize: 10, color: "var(--muted)" }}>{getCategoryName(cat.category, examTrack)}</span>
                        <span style={{ fontSize: 12, fontWeight: 600 }}>{cat.total.toLocaleString()} <span style={{ fontSize: 10, fontWeight: 400, color: "var(--muted)" }}>道</span></span>
                      </div>
                    </div>
@@ -1148,7 +1155,7 @@ function OriginalHomePage({ examTrack = "gongkao", onGoAIGenerate }) {
                   <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 0, paddingTop: 2 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>
-                        {categoryNames[cat.category] || cat.category}
+                        {getCategoryName(cat.category, examTrack)}
                       </span>
                       <span style={{ fontSize: 11, color: "var(--muted)" }}>
                         <span style={{ color: "var(--text)", fontWeight: 600 }}>{cat.done || 0}</span> / {cat.total.toLocaleString()} 题

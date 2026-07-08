@@ -9,9 +9,9 @@ function buildBackupFilename() {
 
 async function saveBackupFile(parentWindow, payload) {
   const { canceled, filePath } = await dialog.showSaveDialog(parentWindow || null, {
-    title: '导出 OpenExam 备份',
+    title: '导出 AdmitUp 备份',
     defaultPath: path.join(app.getPath('downloads'), buildBackupFilename()),
-    filters: [{ name: 'OpenExam Backup', extensions: ['json'] }],
+    filters: [{ name: 'AdmitUp Backup', extensions: ['json'] }],
   });
 
   if (canceled || !filePath) return { canceled: true };
@@ -22,8 +22,8 @@ async function saveBackupFile(parentWindow, payload) {
 
 async function openBackupFile(parentWindow) {
   const { canceled, filePaths } = await dialog.showOpenDialog(parentWindow || null, {
-    title: '导入 OpenExam 备份',
-    filters: [{ name: 'OpenExam Backup', extensions: ['json'] }],
+    title: '导入 AdmitUp 备份',
+    filters: [{ name: 'AdmitUp Backup', extensions: ['json'] }],
     properties: ['openFile'],
   });
 

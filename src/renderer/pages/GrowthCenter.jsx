@@ -3,6 +3,7 @@ import { ICONS, Ico, getAchievementTierStyle } from "../components/AchievementVi
 import AchievementTile, { AchievementRing } from "../components/AchievementTile.jsx";
 import AchievementDialog from "../components/AchievementDialog.jsx";
 import { normalizeAchievements } from "../utils/achievementUtils.js";
+import { getSubjectForTrack } from "../utils/examTaxonomy.js";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 const SectionHead = ({ icon, title, color = "var(--accent)", right }) => (
@@ -64,7 +65,7 @@ const getHeatmapSummary = (cell) => {
 };
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
-export default function GrowthCenter({ onOpenAchievements }) {
+export default function GrowthCenter({ onOpenAchievements, examTrack = "gongkao" }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dailyGoal] = useState(50);
@@ -75,11 +76,11 @@ export default function GrowthCenter({ onOpenAchievements }) {
   useEffect(() => {
     (async () => {
       if (!window.openexam?.db) { setLoading(false); return; }
-      try { setData(await window.openexam.db.getGrowthData()); }
+      try { setData(await window.openexam.db.getGrowthData({ subject: getSubjectForTrack(examTrack) })); }
       catch (e) { console.error(e); }
       setLoading(false);
     })();
-  }, []);
+  }, [examTrack]);
 
   if (loading) return (
     <section className="main-panel" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>

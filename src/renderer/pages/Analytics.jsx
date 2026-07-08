@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { getAISettings, isAIConfigured } from "../store/aiSettings.js";
+import { getCategories, getCategoryName, getSubjectForTrack } from "../utils/examTaxonomy.js";
 
 const CN = {
   yanyu: "言语理解",
@@ -179,7 +180,7 @@ function StackedBar({ correct, wrong, total }) {
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
-export default function Analytics({ onOpenSettings }) {
+export default function Analytics({ onOpenSettings, examTrack = "gongkao" }) {
   const [stats, setStats] = useState({
     totalQuestions: 0, totalDone: 0, accuracy: 0,
     wrongCount: 0, correctCount: 0,
@@ -193,15 +194,21 @@ export default function Analytics({ onOpenSettings }) {
     (async () => {
       if (!window.openexam?.db) return;
       try {
+        const subject = getSubjectForTrack(examTrack);
         const [s, c] = await Promise.all([
-          window.openexam.db.getPracticeStats(),
-          window.openexam.db.getCategoryStats(),
+          window.openexam.db.getPracticeStats({ subject }),
+          window.openexam.db.getCategoryStats({ subject }),
         ]);
+        const statMap = new Map((c || []).map((item) => [item.category, item]));
         setStats(s);
-        setCategories(c);
+        setCategories(getCategories(examTrack).map((category) => ({
+          category: category.key,
+          total: statMap.get(category.key)?.total || 0,
+          done: statMap.get(category.key)?.done || 0,
+        })));
       } catch (e) { console.error(e); }
     })();
-  }, []);
+  }, [examTrack]);
 
   const totalPossible  = categories.reduce((sum, c) => sum + c.total, 0);
   const totalDone      = categories.reduce((sum, c) => sum + (c.done || 0), 0);
@@ -210,7 +217,7 @@ export default function Analytics({ onOpenSettings }) {
 
   const radarData = categories
     .map((c, i) => ({
-      name: CN[c.category] || c.category,
+      name: getCategoryName(c.category, examTrack) || CN[c.category] || c.category,
       pct: c.total > 0 ? Math.round(((c.done || 0) / c.total) * 100) : 0,
       total: c.total, done: c.done || 0,
       ...SPECTRUM[i % SPECTRUM.length],
